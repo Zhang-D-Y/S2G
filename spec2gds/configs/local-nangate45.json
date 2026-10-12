@@ -1,0 +1,69 @@
+{
+  "acceptance": {
+    "hold_ws_min": 0,
+    "require_drc": true,
+    "require_lvs": true,
+    "setup_ws_min": 0
+  },
+  "buffer": [
+    "BUF_X1",
+    "A",
+    "Z"
+  ],
+  "candidate_budget": 8,
+  "cdl": "cdl/NangateOpenCellLibrary.cdl",
+  "cell_lef": "lef/NangateOpenCellLibrary.macro.mod.lef",
+  "core_area": [
+    10,
+    10,
+    50,
+    50
+  ],
+  "corner": "typical",
+  "die_area": [
+    0,
+    0,
+    60,
+    60
+  ],
+  "dont_use": [
+    "TAPCELL_X1",
+    "FILLCELL_X1",
+    "AOI211_X1",
+    "OAI211_X1"
+  ],
+  "drc_deck": "drc/FreePDK45.lydrc",
+  "graph_parser_dir": "/data1/zhangdy/S2G/spec2gds/vendor/r2g/techlib",
+  "liberty": "lib/NangateOpenCellLibrary_typical.lib",
+  "lvs_deck": "/data1/zhangdy/S2G/spec2gds/platforms/nangate45/nangate45_s2g.lylvs",
+  "orfs_flow": "/opt/OpenROAD-flow-scripts/flow",
+  "place_density": 0.4,
+  "platform": "nangate45",
+  "platform_dir": "/data1/zhangdy/Tools/OpenROAD-flow-scripts/flow/platforms/nangate45",
+  "provenance_note": "Explicit compatibility profile: installed ORFS scripts plus separately fingerprinted local Nangate45 platform. Research PDK, not foundry signoff. S2G-local LVS PWELL body-connection correction, qualified with positive and negative controls.",
+  "rcx_rules": "rcx_patterns.rules",
+  "route_seed": 17,
+  "schema": "s2g.context.v1",
+  "tech_lef": "lef/NangateOpenCellLibrary.tech.lef",
+  "threads": 1,
+  "tiehi": [
+    "LOGIC1_X1",
+    "Z"
+  ],
+  "tielo": [
+    "LOGIC0_X1",
+    "Z"
+  ],
+  "timeout_s": 600,
+  "tool_run_budget": 12,
+  "tools": {
+    "iverilog": "/opt/OpenROAD/oss-cad-suite/bin/iverilog",
+    "klayout": "/usr/bin/klayout",
+    "make": "/usr/bin/make",
+    "openroad": "/usr/bin/openroad",
+    "vvp": "/opt/OpenROAD/oss-cad-suite/bin/vvp",
+    "yosys": "/opt/OpenROAD/oss-cad-suite/bin/yosys"
+  },
+  "typed_guard": "/data1/zhangdy/S2G/rtl_rewrite_pilot/experiments/arithmetic_stability/guard.py",
+  "typed_rules": "/data1/zhangdy/S2G/rtl_rewrite_pilot/rtltrial/search/rules.py"
+}

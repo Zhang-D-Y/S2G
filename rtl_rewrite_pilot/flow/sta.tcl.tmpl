@@ -1,0 +1,12 @@
+# rtltrial mapped STA v1: Liberty NLDM cell delays, no wire load model, no parasitics.
+read_liberty ${liberty}
+read_verilog netlist.v
+link_design ${top}
+read_sdc ${sdc}
+puts "RTLTRIAL_CHECK_SETUP_BEGIN"
+check_setup -verbose
+puts "RTLTRIAL_CHECK_SETUP_END"
+report_checks -path_delay max -group_count ${npaths} -fields {input_pin} -format json > sta_paths.json
+puts "RTLTRIAL_WNS [sta::worst_slack_cmd max]"
+puts "RTLTRIAL_TNS [sta::total_negative_slack_cmd max]"
+exit

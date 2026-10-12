@@ -1,0 +1,103 @@
+{
+  "schema_version": "rtltrial.design.v1",
+  "design_id": "multi_pipe_8bit",
+  "source": {
+    "repo": "RTLLM",
+    "url": "https://github.com/hkust-zhiyao/RTLLM",
+    "commit": "51ed553d0ffd32797a1a0a13e051656bf302c81f",
+    "dir": "Arithmetic/Multiplier/multi_pipe_8bit"
+  },
+  "correctness_basis": "RTLLM reference implementation (verified_*.v) for this task; must pass the RTLLM testbench unchanged at baseline.",
+  "import": {
+    "rtl": [
+      {
+        "from": "verified_multi_pipe_8bit.v",
+        "to": "multi_pipe_8bit.v",
+        "rename": [
+          "module verified_multi_pipe_8bit",
+          "module multi_pipe_8bit"
+        ]
+      }
+    ],
+    "tb": [
+      {
+        "from": "testbench.v",
+        "to": "testbench.v"
+      }
+    ]
+  },
+  "baseline_edits": "Module renamed verified_multi_pipe_8bit -> multi_pipe_8bit to match the testbench instantiation (RTLLM convention). No other change.",
+  "known_quirks": [
+    "Upstream reset branch assigns mul_a_reg twice and never resets mul_b_reg; kept as-is (baseline is not repaired)."
+  ],
+  "top": "multi_pipe_8bit",
+  "clock_port": "clk",
+  "parameters": {},
+  "defines": {},
+  "rtl_files": [
+    "multi_pipe_8bit.v"
+  ],
+  "tb": {
+    "files": [
+      "testbench.v"
+    ],
+    "top": "tb_multi_pipe",
+    "timeout_s": 60,
+    "test_inputs": "testbench-internal $random with the simulator's default seed (no plusarg); 1 directed + 100 random vectors",
+    "monitor": {
+      "events": {
+        "valid_out_events": "tb_multi_pipe.u1.mul_en_out"
+      },
+      "values": {
+        "error": "tb_multi_pipe.error"
+      }
+    },
+    "pass_contract": {
+      "pass_regex": "=+Your Design Passed=+",
+      "fail_regexes": [
+        "Test completed with\\s+\\d+\\s*/\\s*\\d+ failures",
+        "^ERROR",
+        "^VVP error",
+        "\\$fatal",
+        "^Error:"
+      ],
+      "finish_regex": "\\$finish called at (\\d+)",
+      "adapter_requirements": {
+        "valid_out_events": [
+          ">=",
+          100
+        ],
+        "error": [
+          "==",
+          0
+        ]
+      },
+      "adapter_failure_fields": [
+        "error"
+      ]
+    }
+  },
+  "regions": [
+    {
+      "id": "R_mul_out_sum",
+      "file": "multi_pipe_8bit.v",
+      "anchor_regex": "else\\s+mul_out_reg\\s*<=",
+      "terminator": ";",
+      "description": "right-hand side of the non-reset assignment `mul_out_reg <= ...;` (line 80 of the original)",
+      "kind": "pure combinational expression feeding register mul_out_reg",
+      "preconditions": "operands sum[0..3] are reg [15:0] (unsigned), LHS mul_out_reg is reg [15:0]; expression is context-determined 16-bit, i.e. addition modulo 2^16; no intermediate truncation, extension, saturation or comparison"
+    }
+  ],
+  "allowed_transform": {
+    "id": "add_regroup_same_width",
+    "definition": "Regroup or reorder a same-width unsigned addition modulo 2^W: the replacement must be a sum of exactly the current region's operands (same multiset), combined only with binary + and parentheses."
+  },
+  "negative_controls": [
+    {
+      "id": "NEG-drop-operand",
+      "region": "R_mul_out_sum",
+      "body": "sum[0] + sum[1] + sum[2] + sum[2]",
+      "intent": "replace operand sum[3] with sum[2]: corrupts mul_out whenever partial products 6/7 are non-zero; TB must report failure"
+    }
+  ]
+}

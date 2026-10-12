@@ -1,0 +1,5 @@
+# Pilot-authored SDC (NOT design-original): single clock, zero I/O delay.
+# Timing derived from it is reported as UNTRUSTED and is not used for decisions.
+create_clock -name ${clock_port} -period ${period_ns} [get_ports ${clock_port}]
+set_input_delay 0 -clock ${clock_port} [delete_from_list [all_inputs] [get_ports ${clock_port}]]
+set_output_delay 0 -clock ${clock_port} [all_outputs]

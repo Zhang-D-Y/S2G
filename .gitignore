@@ -1,0 +1,38 @@
+# Local documentation, experiment outputs, and downloaded toolchains.
+docs/
+/third_party/
+/tools/
+/graph/
+/rtl_rewrite_pilot/work/
+/rtl_rewrite_pilot/results/
+/spec2gds/runs/
+
+# Keep only the handwritten DEV entry scripts, not their experiment workspaces.
+/rtl_rewrite_pilot/dev/*
+!/rtl_rewrite_pilot/dev/verilogeval_mux9_v1/
+/rtl_rewrite_pilot/dev/verilogeval_mux9_v1/*
+!/rtl_rewrite_pilot/dev/verilogeval_mux9_v1/run.py
+!/rtl_rewrite_pilot/dev/complex_screen/
+/rtl_rewrite_pilot/dev/complex_screen/*
+!/rtl_rewrite_pilot/dev/complex_screen/screen_tb.py
+
+# Generated reports and build/interpreter caches.
+RESULTS.md
+REPORT.md
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+*.log
+*.vvp
+*.o
+*.so
+*.a
+
+# Credentials and local environment files.
+.env
+.env.*
+.venv/
+venv/

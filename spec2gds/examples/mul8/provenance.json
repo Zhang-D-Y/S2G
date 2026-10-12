@@ -1,0 +1,5 @@
+{
+  "scope": "local reuse of existing S2G research input; retain upstream dataset provenance before redistribution",
+  "sha256": "7ea2d837da4f810bceb2f52dfc6c2ac05c6a09322f6e411631d4fcca0f8fe200",
+  "source": "/data1/zhangdy/S2G/rtl_rewrite_pilot/dev/backend_screen_v1/inputs/mul8/rtl/original/dut.v"
+}

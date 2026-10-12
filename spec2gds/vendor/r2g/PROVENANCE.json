@@ -1,0 +1,13 @@
+{
+  "schema": "s2g.vendor.v1",
+  "upstream": "https://github.com/ShenShan123/r2g-skills",
+  "commit": "d08667462e1905abff1582cd005eeb91c96438f2",
+  "source_directory": "r2g-skills/def-graph/scripts/extract/techlib",
+  "files": {
+    "techlib/def_parse.py": "b6ef714c28af041a86f6e5d4f69e48f35549bf92b8be9d4af22c317e6c30d207",
+    "techlib/lef.py": "54d142fa6df1a2ecac65d2b523cc250b786b1655024018361184ca1ddb57ef9a",
+    "techlib/liberty.py": "e74f4cef8f71d0edb7e573bcdc5cd6e306690a97fd6f260b563aa0eb92ece05d"
+  },
+  "modified": false,
+  "scope": "Only pure-stdlib DEF/LEF/Liberty functions used by S2G. Other optional functions in these upstream files are not enabled."
+}

@@ -1,0 +1,13 @@
+{
+  "schema":"s2g.spec.v1", "design_family":"demo_adder8", "top":"adder8",
+  "ports":{"a":{"direction":"input","width":8,"signed":false},"b":{"direction":"input","width":8,"signed":false},"y":{"direction":"output","width":9,"signed":false}},
+  "behavior":"For every binary a,b, y is their exact unsigned sum.",
+  "arithmetic":"zero-extend operands to 9 bits; no overflow at output",
+  "clocks":[], "resets":[], "latency_cycles":0, "throughput":"combinational",
+  "protocol":"always active; no handshake", "legal_inputs":"all binary input combinations; X/Z excluded from formal contract",
+  "parameters":{}, "requirements":[{"id":"SUM","text":"y = unsigned(a) + unsigned(b) for all 65536 pairs"}],
+  "verification":{"tb_top":"tb", "pass_marker":"S2G_PASS", "minimum_checks":65536,
+    "reference_origin":"builtin demonstrator: mathematical unsigned addition",
+    "test_origin":"exhaustive independently computed integer oracle in TB; requirement SUM"},
+  "open_questions":[]
+}

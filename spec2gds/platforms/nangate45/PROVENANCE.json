@@ -1,0 +1,11 @@
+{
+  "changes": [
+    "Add PWELL to the existing standard-cell BULK/VSS explicit body connection, matching NMOS extraction and CDL body pins.",
+    "Accept an explicit report_file for report_lvs so a checker cannot write into the input GDS directory."
+  ],
+  "evidence": "runs/lvs-debug-001: positive adder8, signal fault and NMOS body fault controls",
+  "patched_sha256": "01210ab68b16d8488cea6e381f3916612c6de1b4e8e27eca3b5330c5de9f24bc",
+  "qualification": "research Nangate45 only; no manufactured well-tap verification claim",
+  "source_path": "/data1/zhangdy/Tools/OpenROAD-flow-scripts/flow/platforms/nangate45/lvs/nangate45.lylvs",
+  "source_sha256": "dff26bc073de8ad17a455a28f01bb17a252e605348620ba142daf9779f2f28ca"
+}

@@ -1,0 +1,48 @@
+{
+  "arithmetic": "unsigned 8-bit operands, exact 16-bit product",
+  "behavior": "Exact unsigned 8x8 multiplication for all binary inputs",
+  "clocks": [],
+  "design_family": "pilot_mul8",
+  "latency_cycles": 0,
+  "legal_inputs": "all binary input combinations; X/Z excluded from formal contract",
+  "open_questions": [],
+  "parameters": {},
+  "ports": {
+    "A": {
+      "direction": "input",
+      "signed": false,
+      "width": 8
+    },
+    "B": {
+      "direction": "input",
+      "signed": false,
+      "width": 8
+    },
+    "product": {
+      "direction": "output",
+      "signed": false,
+      "width": 16
+    }
+  },
+  "protocol": "always active; no handshake",
+  "requirements": [
+    {
+      "id": "MUL",
+      "text": "product = unsigned(A)*unsigned(B) for all 65536 pairs"
+    }
+  ],
+  "resets": [],
+  "rewrite": {
+    "design": "mul8"
+  },
+  "schema": "s2g.spec.v1",
+  "throughput": "combinational",
+  "top": "TopModule",
+  "verification": {
+    "minimum_checks": 65536,
+    "pass_marker": "S2G_PASS",
+    "reference_origin": "S2G existing deterministic backend screening golden; source hash in provenance.json",
+    "tb_top": "tb",
+    "test_origin": "S2G independent exhaustive integer multiplication oracle; requirement MUL"
+  }
+}
