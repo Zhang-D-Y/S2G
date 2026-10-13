@@ -28,7 +28,7 @@ class SmokeRegressions(unittest.TestCase):
             self.assertEqual(worst_slack(risk,'setup'),5)
             self.assertEqual(worst_slack({'schema':'s2g.risk.v1','setup_wns':5},'setup'),5)
 
-    def test_graph_failure_closes_run_and_acceptance(self):
+    def test_graph_failure_is_a_dataset_gate_not_a_circuit_verdict(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);p=root/'candidates/c0000';p.mkdir(parents=True)
             write(root/'freeze.json',{});(p/'rtl.v').write_text('module top; endmodule')
@@ -47,8 +47,13 @@ class SmokeRegressions(unittest.TestCase):
                  patch('s2g.pipeline.run_backend',side_effect=backend), \
                  patch('s2g.graphs.build',side_effect=GateError('bad graph')):
                 result=pipeline.evaluate(root,'c0000')
-            self.assertEqual(result['status'],'FAILED')
-            self.assertEqual(result['acceptance']['status'],'REJECTED')
+            # Upgrade plan section 2.2: graph export failure no longer fails the circuit run.
+            self.assertEqual(result['status'],'COMPLETE')
+            self.assertEqual(result['acceptance']['status'],'ACCEPTED')
+            self.assertEqual(result['acceptance']['dataset_gates'],{'graph':'FAIL','graph_error':'bad graph'})
+            # A dataset task that requires graphs still fails overall.
+            self.assertEqual(self.cli(['run','--root',str(root),'--candidate','c0000','--require-graph'],result),1)
+            self.assertEqual(self.cli(['run','--root',str(root),'--candidate','c0000'],result),0)
 
     def cli(self,args,result):
         with patch('sys.argv',['s2g']+args),patch('s2g.pipeline.evaluate',return_value=result),contextlib.redirect_stdout(io.StringIO()):

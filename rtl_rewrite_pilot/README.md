@@ -1,63 +1,26 @@
-# rtl_rewrite_pilot (rtltrial v1)
+# rtl_rewrite_pilot (historical pilot + shared helpers)
 
-Implementation of `docs/RTL Rewriting Verification Scheme Based on Test Platform and Comprehensive Feedback_v1.md`:
-original baseline → synthesis feedback → constrained rewrite → original-TB regression → synthesis comparison → keep or roll back.
-This project is independent of the TEHM/R2G, Table2 and SOURCE experiments. The v1 CLI has no P&R feedback, no training and no formal checks
-(`formal_status` is always `NOT_RUN`). The separate [VerilogEval mux DEV screen](dev/verilogeval_mux9_v1/README.md)
-adds combinational equivalence for its own fixed candidates; it does not change the CLI's frozen experiments.
+The optimization loop now lives in `../spec2gds` (`python3 -m s2g loop-init|loop-run`, see
+`../docs/S2G_Upgrade_Plan_v1_EN.md`). This directory keeps only what is still imported or documents frozen evidence:
 
-## Commands
+- `rtltrial/{util,liberty,netlist}.py`: helpers used by `rtltrial/search`, the remaining experiment runners and the DEV screens.
+- `rtltrial/search/`: structural candidate search; `spec2gds` freezes `search/rules.py` as its typed-rule library.
+- `experiments/{arithmetic_stability,backend_screen,mux9_flash_nothinking,mux_stability}/`: runners of closed experiments.
+  `arithmetic_stability/guard.py` is also frozen by `spec2gds` as `typed_guard`.
+- `dev/`: DEV screen entry scripts.
 
-Run from this directory: `python3 -m rtltrial <cmd>`. Only the standard library is used; works with Python ≥ 3.10.
+Removed on 2026-10-12 (recoverable from git commit 9e3a442): the sky130hd `rtltrial` v1 CLI (`cli`, `arms`, `evaluate`,
+`propose`, `summarize`, `selftest`, `feedback`, `manifest`, `region`, `synth`, `tb`, `llm`), its `flow/` templates,
+`pilot_config.json` and `designs/`; and the superseded `experiments/mux9_feedback` and `experiments/mux9_flash_feedback` runners.
+Their exact runner code is frozen in `work/mux9_b1_b2_v1/code_snapshot/` and `work/mux9_flash_b1_b2_v1/code_snapshot/`;
+their READMEs moved to `../data/experiments/`. The model transport now lives in `spec2gds/s2g/provider.py`.
 
-| command | what it does |
-|---|---|
-| `validate --design D [--source-root R]` | Dry-run check: tools, Liberty hash, source files and, once frozen, every manifest hash (RTL/TB snapshot, tool versions, scripts, SDC, dont-use, adapter, rules). |
-| `baseline --design D --source-root R` | Imports a read-only snapshot (checking the source commit), freezes `config/run_manifest.json`, then runs lint, the original TB and N repeat syntheses. Ends `BASELINE_OK`, or `BLOCKED` with a reason. |
-| `selftest` | PASS-contract parser on pass / fail / missing-evidence / timeout logs, plus one real simulation that times out. |
-| `negctl --design D` | Negative control(s) from the design spec. They must end `TB_FAILED`; if not, the regression-effectiveness claim is suspended. |
-| `propose --design D --arm A` | Previews the next proposal (template body, or LLM prompt written to `dryrun/`). Spends nothing. |
-| `run-arm --design D --arm T0\|B1\|B2 [--live]` | Budgeted loop. B1/B2 make **no model call without `--live`**: they write the prompt to `dryrun/` and stop. |
-| `test\|synth\|compare --design D --cand ID` | Advance one candidate by one stage (idempotent). |
-| `summarize` | `results/summary.csv` + `results/<design>.json` (all attempts, failures, costs). |
+Tests: `python3 -m unittest tests.test_structure_search experiments.backend_screen.test_analyze` from this directory; the
+other experiments run `python3 -m unittest discover -p 'test_*.py'` inside their own directory.
+Controller unit tests use the versioned example and synthetic evidence. Tests that validate historical arithmetic/mux
+archives require the excluded local `work/` or DEV artifacts and report an explicit skip when those archives are absent.
 
-For `--live`, first `source ~/.llm_env`. The client reads `LLM_API_KEY / LLM_MODEL / LLM_BASE_URL` (OpenAI-compatible) and records
-the HTTP status and error text of every call. A provider failure consumes the attempt.
-
-## Arms (same candidate space, budget, evaluator)
-
-- `T0`: deterministic enumeration of the allowed transform. Use it to check the flow; no model.
-- `B1`: model proposer. Sees RTL, contract, transform definition, the TB, and earlier attempts' scope/compile/TB outcomes. It never
-  sees synthesis numbers or decision labels. Disclosed leak: the controller's choice of incumbent conveys selection information.
-- `B2`: everything B1 sees, plus `feedback/<version>.json` for the current version. From the next round on it also sees the
-  synthesis outcomes of earlier candidates. The feedback is trimmed to fit the same per-call input limit.
-- `NEG`: negative control, outside the budget.
-
-Prompts carry only the task, the contract/protocol and data from this run. They contain no rewriting advice.
-
-## Layout (per design under `work/<design_id>/`)
-
-```
-baseline/{rtl,tb}/, provenance.json   read-only snapshot + source commit/hashes
-config/run_manifest.json              frozen contract (contract_hash)
-versions/<hash>.json                  RTL versions with metrics (incumbents are hash refs)
-candidates/<id>/                      rtl/, patch.diff, proposal/, candidate_record.json
-runs/<id>-{lint,tb,synth}/            every log, script, netlist, STA report
-feedback/<hash>.json                  B2 feedback package of a completed synthesis
-state/<arm>.json                      attempts, rounds, incumbent
-negative_controls.json, baseline_record.json
-```
-
-## Frozen flow (`flow/`)
-
-The flow is Yosys `synth -flatten` (the coarse netlist with `src` attributes is dumped before `fine`), then `dfflibmap` +
-`abc -D 10000` on sky130hd `tt_025C_1v80`, using the ORFS dont-use list. Metrics: Liberty area, cell types, coarse register and latch
-bits, logic depth (comb std cells between timing start- and endpoints, computed in `netlist.py`), a name-insensitive WL fingerprint of
-the mapped netlist, and OpenSTA under a **pilot-authored SDC**. Timing is labelled `REPORTED_UNTRUSTED` and does not enter decisions.
-Critical-path endpoints are mapped to RTL lines in three steps: register Q name → coarse register → D-cone `src` attributes, with a
-confidence level.
-
-## Status 2026-10-10 (design `multi_pipe_8bit`, RTLLM @51ed553)
+## Historical v1 result: 2026-10-10 (design `multi_pipe_8bit`, RTLLM @51ed553, sky130hd)
 
 - Baseline: `TB_PASSED` (100 valid outputs observed by the passive adapter, error=0, $finish at 72220); area 4367.94, 400 cells,
   depth 12, 116 register bits; 3/3 repeat syntheses identical.
@@ -65,7 +28,7 @@ confidence level.
 - `T0`: 3/3 candidates (balanced and two other bracketings) `COLLAPSED`. The mapped netlist is **byte-identical** to the baseline,
   because Yosys `alumacc` folds every bracketing of the 4-term same-width sum into one `$macc_v2`. Under this flow the
   `add_regroup_same_width` class on this design hits the stop condition "synthesis repeatedly erases candidate changes".
-  B1/B2 have **not** been run live.
+  B1/B2 were never run live with that CLI. Evidence: `work/multi_pipe_8bit/`.
 
 ## Additional DEV screen: 2026-10-11
 
@@ -77,12 +40,12 @@ distinct netlists. Area changes are +42.10% and -0.1613%; neither meets the froz
 0.5% area-improvement rule. The original is retained. The negative control is
 detected by both TB and equivalence. Full results and the earlier blocked
 verification-harness run are preserved in the linked DEV directory. No model
-arms were run during that deterministic screen; mux support is not yet integrated into the main CLI.
+arms were run during that deterministic screen; mux support was never integrated into the removed v1 CLI.
 
 
 ## Flash model comparison: 2026-10-11
 
-The separate [DeepSeek-V4.1-Flash B1/B2 experiment](experiments/mux9_flash_feedback/README.md)
+The separate [DeepSeek-V4.1-Flash B1/B2 experiment](../data/experiments/mux9_flash_feedback/README.md)
 uses two calls per arm over two rounds, with identical verification and synthesis
 rules. It follows the user's explicit model correction; two earlier Pro submissions
 are archived separately and count against the six-call total authorization.

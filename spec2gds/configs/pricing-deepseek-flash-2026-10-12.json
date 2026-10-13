@@ -1,0 +1,13 @@
+{
+  "currency": "CNY",
+  "input_cache_miss": 2.0,
+  "input_cache_hit": 0.04,
+  "output": 8.0,
+  "per_tokens": 1000000,
+  "period": "peak prices used for both reservation and settlement (upper bound; off-peak is half)",
+  "model": "deepseek-flash (DeepSeek-V4.1-Flash)",
+  "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+  "checked_at": "2026-10-12",
+  "overhead_tokens": 1024,
+  "worst_case_basis": "input tokens <= UTF-8 bytes + overhead, all billed as cache misses; every allowed output token billed"
+}

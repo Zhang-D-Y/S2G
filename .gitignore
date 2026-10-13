@@ -1,5 +1,6 @@
 # Local documentation, experiment outputs, and downloaded toolchains.
 docs/
+/data/
 /third_party/
 /tools/
 /graph/

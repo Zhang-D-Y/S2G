@@ -13,6 +13,8 @@ from guard import check
 
 
 class Controls(unittest.TestCase):
+    @unittest.skipUnless((e.DEV/'run_002/rtl/B0/dut.v').is_file(),
+                         'Historical DEV mux archive is excluded from source-only checkouts')
     def test_original_and_dev_mux_blocks(self):
         for cid in ("B0", "NEG", "T0-01", "T0-02"):
             text = (e.DEV / "run_002/rtl" / cid / "dut.v").read_text()
@@ -31,6 +33,8 @@ class Controls(unittest.TestCase):
         ):
             self.assertFalse(check(text)[0], text)
 
+    @unittest.skipUnless((e.PILOT/'work/mux9_flash_nothinking_v1/protocol.json').is_file(),
+                         'Historical Flash archive is excluded from source-only checkouts')
     def test_failed_calls_spend_slots_before_network_and_never_retry(self):
         source = e.PILOT / "work/mux9_flash_nothinking_v1"
         with tempfile.TemporaryDirectory(prefix="s2g-offline-controls-") as tmp:

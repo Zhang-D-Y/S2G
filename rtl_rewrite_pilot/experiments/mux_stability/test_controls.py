@@ -11,6 +11,8 @@ import cohort
 
 ROOT=e.PILOT/'work/mux_stability_v2'
 
+@unittest.skipUnless(all((ROOT/f'{d}-rep1/protocol.json').is_file() for d in e.DESIGNS),
+                     'Historical mux archive is excluded from source-only checkouts')
 class Controls(unittest.TestCase):
     def test_design_specific_scope(self):
         for name in e.DESIGNS:

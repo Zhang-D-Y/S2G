@@ -66,6 +66,30 @@ def repair_cost(results):
     return {'valid':True,'net_edits':sum(r['inserted']+r['removed']+r['master_changed'] for r in records),'events':records,
             'scope':'net instance insert/remove/master changes per wrapped command; excludes pin swaps, transients, and edits inside unwrapped placer/router commands'}
 
+def parasitic_provenance(run,results,c):
+    """Classify the final SPEF from what the tools actually logged, not from its extension.
+    detailed_route_extraction requires an OpenRCX run on routed geometry with a named rules file."""
+    spef=results/'6_final.spef'
+    logs=sorted((run/'backend/work/logs'/c['platform']).rglob('6_report.log'))
+    text=logs[-1].read_text(errors='replace') if logs else ''
+    rules=re.findall(r'RCX-0435\] Reading extraction model file (\S+)',text)
+    extracted=re.search(r'RCX-0045\] Extract \d+ nets',text) is not None
+    routed='route' in ledger_stages(run)
+    expected=Path(c['platform_dir'])/c['rcx_rules'] if c.get('platform_dir') and c.get('rcx_rules') else None
+    rec={'spef_present':spef.is_file(),'spef_sha256':digest(spef) if spef.is_file() else None,
+         'rules_file':rules[-1] if rules else None,'expected_rules_sha256':digest(expected) if expected and expected.is_file() else None,
+         'rules_sha256':digest(rules[-1]) if rules and Path(rules[-1]).is_file() else None,
+         'generator_log':str(logs[-1]) if logs else None,
+         'loaded_by_s2g_sta':'read_spef' in (run/'stages/finish/export.tcl').read_text() if (run/'stages/finish/export.tcl').is_file() else False}
+    ok=rec['spef_present'] and extracted and routed and rec['rules_sha256'] and rec['rules_sha256']==rec['expected_rules_sha256']
+    rec['provenance']='detailed_route_extraction' if ok else ('unknown' if rec['spef_present'] else None)
+    rec['reason']=None if ok else 'no OpenRCX extraction with the frozen rules file on routed geometry was logged'
+    return rec
+
+def ledger_stages(run):
+    try:return read(run/'ledger.json').get('stages',{})
+    except (OSError,ValueError):return {}
+
 def measure(run,results,c):
     metrics={}
     for path in sorted((run/'backend/work/logs'/c['platform']).rglob('6_report.json')):
@@ -78,7 +102,8 @@ def measure(run,results,c):
         found=re.findall(r'^'+marker+r' (\d+)\s*$',exported,re.M)
         return int(found[0]) if len(found)==1 else None
     setup=pick('timing__setup__ws');hold=pick('timing__hold__ws')
-    report={'schema':'s2g.risk.v2','source':'measured_final_rcx','prediction':None,
+    para=parasitic_provenance(run,results,c)
+    report={'schema':'s2g.risk.v2','source':'measured_final_'+str(para['provenance']),'parasitics':para,'prediction':None,
             'setup_ws':setup,'hold_ws':hold,
             'setup_wns':min(0,setup) if setup is not None else None,
             'hold_wns':min(0,hold) if hold is not None else None,
@@ -88,7 +113,7 @@ def measure(run,results,c):
             'fanout_violations':count('S2G_FANOUT_COUNT'),
             'repair':repair_cost(results),'power':{'value':None,'valid':False,'reason':'no activity contract'},
             'antenna':{'value':None,'valid':False,'reason':'not yet parsed by this adapter'}}
-    report['valid']={k:v is not None for k,v in report.items() if k not in ('schema','source','prediction','repair','power','antenna')}
+    report['valid']={k:v is not None for k,v in report.items() if k not in ('schema','source','parasitics','prediction','repair','power','antenna')}
     write(run/'risk.json',report)
     return report
 

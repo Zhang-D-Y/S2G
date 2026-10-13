@@ -1,0 +1,56 @@
+{
+  "budget": {
+    "candidate_submissions": 4,
+    "model_requests": 4,
+    "physical_evaluations": 6,
+    "query_calls": 4,
+    "query_chars": 6000,
+    "wall_s": 7200
+  },
+  "experiment": {
+    "goal_text": "The final objective is lower routed cell area under the frozen routed setup/hold, electrical, GDS/DRC/LVS feasibility gates. Report routed timing headroom, repair edits and costs as separate secondary outcomes. Search promotion uses the same synthesis area/setup rule in both arms; physical results cannot change parent selection. Preserve the original ALU behavior for all 68 binary input bits. System functions including $signed/$unsigned are disallowed by the existing static gate; use explicit signed wires for signed operations.",
+    "primary_metric": "confirmed_routed_area_gain_rel (arm-selected result, complete routed acceptance and repeat-synthesis confirmation required; 0 for confirmed original retained)"
+  },
+  "feedback": {
+    "contract_chars": 8000,
+    "max_issue_examples": 6,
+    "max_rtl_chars": 12000,
+    "packet_chars": 5000,
+    "query_chars_per_call": 1500,
+    "recent_attempt_chars": 2500,
+    "recent_attempts": 4
+  },
+  "final_confirmation": {
+    "repeat_synthesis": 1
+  },
+  "note": "Frozen development comparison on RV32 ALU, three independent repetitions per arm. Both arms route the baseline and every functionally/mapping-valid proposal; only A3 sees physical observations. Search selection is synthesis-based for both; final primary outcome is routed area gain after full confirmation. Infrastructure-invalid v1 pre-run used 9 requests. Fresh v2 allows at most 4 requests per loop (24 total), making the global maximum 33 under the authorized 36. Queries consume this same request cap.",
+  "objective": {
+    "kind": "min_mapped_area_under_setup_limit",
+    "min_rel_area_improvement": 0.005,
+    "setup_ws_min_ns": 0.0
+  },
+  "physical": {
+    "baseline": true,
+    "final": true,
+    "search_quota": 4,
+    "search_schedule": "first_eligible"
+  },
+  "policy_version": "a2a3-riscv-alu32-v2",
+  "provider": {
+    "api_key_env": "LLM_API_KEY",
+    "base_url": "https://api.deepseek.com",
+    "max_tokens": 8192,
+    "model": "deepseek-flash",
+    "model_env": null,
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "timeout_s": 300,
+    "transport_retries": 0
+  },
+  "schema": "s2g.loop-policy.v1",
+  "stop": {
+    "max_consecutive_no_change": 2
+  }
+}

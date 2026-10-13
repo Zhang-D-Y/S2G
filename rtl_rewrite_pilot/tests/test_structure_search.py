@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rtltrial.search import engine, rules, adapter
-from rtltrial.util import read_json, write_json, sha256_file
+from rtltrial.util import read_json, write_json, sha256_file, sha256_json
 
 
 class Rules(unittest.TestCase):
@@ -46,10 +46,24 @@ class Controller(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)
-        self.source=adapter.PILOT/'work/arithmetic_stability_v1/mul8-rep1'
-        for name in ('rtl/B0/dut.v','frozen/mul8_test.sv','baseline.json',
-                     'feedback/B0.json','runs/B0-synth-1/synth_result.json'):
-            dst=self.root/name;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_bytes((self.source/name).read_bytes())
+        # Controller tests need a valid evidence chain, not archived experiment
+        # measurements. Reuse the versioned example and synthetic tool evidence.
+        example=adapter.PILOT.parent/'spec2gds/examples/mul8'
+        for name,src in (('rtl/B0/dut.v',example/'golden.v'),('frozen/mul8_test.sv',example/'tb.v')):
+            dst=self.root/name;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_bytes(src.read_bytes())
+        metrics={'area':100.0,'cells':10,'cells_by_type':{'FIXTURE_CELL':10},'logic_depth':2,
+                 'fingerprint':'fixture-baseline','netlist_sha256':'fixture-netlist'}
+        synth={'status':'SYNTH_DONE','metrics':metrics,'check_clean':True,
+               'jobs':[{'elapsed_s':0.25}],'warnings':[],
+               'timing':{'status':'NOT_RUN','reason':'offline controller fixture'}}
+        result=self.root/'runs/B0-synth-1/synth_result.json'
+        write_json(result,synth)
+        write_json(self.root/'baseline.json',{'status':'BASELINE_OK','synth_repeats':[synth]})
+        feedback={'version_sha256':sha256_file(self.root/'rtl/B0/dut.v'),
+                  'source_run':'runs/B0-synth-1','source_result_sha256':sha256_file(result),
+                  'metrics':metrics,'source_localization':[],'warnings':[],'timing':synth['timing']}
+        feedback['feedback_hash']=sha256_json(feedback)
+        write_json(self.root/'feedback/B0.json',feedback)
         self.arm={'attempts':[],'success_pool':['B0'],'repair_pool':[], 'best':'B0','expansions':{},'pending':None}
         self.state={'status':'PREPARED','arms':{'B1':copy.deepcopy(self.arm),'B2':copy.deepcopy(self.arm)}}
         self.man={'design':'mul8','generation':'structured','generation_catalog':rules.catalog('mul8'),

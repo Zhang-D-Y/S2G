@@ -4,10 +4,12 @@ from .common import *
 from .workspace import verify, locked
 from .verify import functional, synth
 from .backend import run_backend
-from . import graphs
+from . import graphs, synthesis
 
 def acceptance(ledger,risk,signoff,ctx):
-    gates={'run_complete':ledger.get('status')=='COMPLETE' and not ledger.get('graph_error'),
+    # Circuit gates only. Graph export is a separate dataset gate: a graph failure does not
+    # prove the circuit invalid, and a valid graph proves nothing about the circuit.
+    gates={'run_complete':ledger.get('status')=='COMPLETE',
            'functional':ledger.get('functional',{}).get('status')=='PASS',
            'mapped_equivalence':ledger.get('synthesis',{}).get('mapped_proof')=='PASS',
            'postroute_equivalence':ledger.get('postroute_equivalence',{}).get('status')=='PASS',
@@ -19,8 +21,9 @@ def acceptance(ledger,risk,signoff,ctx):
         gates[k]=risk.get(k) is not None and risk[k]==0
     for k in ('drc','lvs'):
         if ctx['acceptance'].get('require_'+k):gates[k]=signoff.get(k,{}).get('status')=='PASS'
-    return {'schema':'s2g.acceptance.v1','status':'ACCEPTED' if all(gates.values()) else 'REJECTED',
-            'gates':gates,'qualification':'research contract only; single corner; no foundry signoff, CDC, DFT, IR or activity-qualified power claim'}
+    graph='NOT_RUN' if 'graphs' not in ledger and 'graph_error' not in ledger else ('FAIL' if ledger.get('graph_error') else 'PASS')
+    return {'schema':'s2g.acceptance.v2','status':'ACCEPTED' if all(gates.values()) else 'REJECTED',
+            'gates':gates,'dataset_gates':{'graph':graph,'graph_error':ledger.get('graph_error')},'qualification':'research contract only; single corner; no foundry signoff, CDC, DFT, IR or activity-qualified power claim'}
 
 def evaluate(root,cid,until='finish'):
     root=Path(root).resolve();spec,ctx,freeze=verify(root)
@@ -40,6 +43,11 @@ def evaluate(root,cid,until='finish'):
     try:
         ledger['functional']=functional(root,run,p/'rtl.v',spec,ctx);write(run/'ledger.json',ledger)
         ledger['synthesis']=synth(root,run,p/'rtl.v',spec,ctx);write(run/'ledger.json',ledger)
+        try:ledger['synthesis_evidence']=synthesis.summary(synthesis.collect(root,run,spec,ctx,rec['rtl_hash']))
+        except (GateError,OSError,ValueError,KeyError) as e:
+            # Evidence-parser failure is not a design violation; promotion policies require VALID metrics.
+            ledger['synthesis_evidence']={'status':'ERROR','error':str(e)}
+        write(run/'ledger.json',ledger)
         if until=='finish':risk,signoff=run_backend(root,run,spec,ctx,ledger)
         ledger['status']='COMPLETE'
     except (GateError,OSError,ValueError,KeyError) as e:
@@ -54,7 +62,7 @@ def evaluate(root,cid,until='finish'):
         if (run/'mapped.json').is_file() and ledger.get('synthesis',{}).get('status')=='PASS':
             try:ledger['graphs']=graphs.build(root,run,spec,ctx,ledger)
             except (GateError,OSError,ValueError,KeyError) as e:
-                ledger.update(graph_error=str(e),status='FAILED',error='graph validation failed: '+str(e))
+                ledger['graph_error']=str(e)
         ledger['elapsed_s']=round(time.monotonic()-start,3);ledger['completed_at']=stamp()
         result=acceptance(ledger,risk,signoff,ctx)
         result.update(candidate=cid,run=run.name,freeze_hash=rec['freeze_hash'],rtl_hash=rec['rtl_hash'])

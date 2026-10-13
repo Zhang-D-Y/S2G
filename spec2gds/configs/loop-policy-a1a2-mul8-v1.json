@@ -1,0 +1,51 @@
+{
+  "schema": "s2g.loop-policy.v1",
+  "policy_version": "a1a2-mul8-v1",
+  "note": "Frozen 2026-10-12 for the first A1-vs-A2 DEV comparison on mul8 (3 independent runs per arm). Do not edit; create a new version instead.",
+  "budget": {
+    "candidate_submissions": 4,
+    "model_requests": 6,
+    "query_calls": 4,
+    "query_chars": 6000,
+    "physical_evaluations": 3,
+    "wall_s": 7200
+  },
+  "objective": {
+    "kind": "min_mapped_area_under_setup_limit",
+    "min_rel_area_improvement": 0.005,
+    "setup_ws_min_ns": 0.0
+  },
+  "feedback": {
+    "contract_chars": 8000,
+    "packet_chars": 5000,
+    "recent_attempt_chars": 2500,
+    "query_chars_per_call": 1500,
+    "max_issue_examples": 6,
+    "max_rtl_chars": 12000,
+    "recent_attempts": 4
+  },
+  "stop": {
+    "max_consecutive_no_change": 2
+  },
+  "physical": {
+    "search_schedule": "first_eligible",
+    "search_quota": 1,
+    "final": true
+  },
+  "final_confirmation": {
+    "repeat_synthesis": 1
+  },
+  "provider": {
+    "model": "deepseek-flash",
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "LLM_API_KEY",
+    "model_env": null,
+    "thinking": {
+      "type": "disabled"
+    },
+    "temperature": 1.0,
+    "max_tokens": 8192,
+    "timeout_s": 300,
+    "transport_retries": 0
+  }
+}

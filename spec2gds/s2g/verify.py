@@ -53,11 +53,13 @@ def proof(ctx, run, name, golden, candidate, top, mapped=False):
 def synth(root,run,rtl,spec,ctx):
     top=spec['top'];lib=Path(ctx['platform_dir'])/ctx['liberty'];mapped=run/'mapped.v'
     excludes=' '.join('-dont_use '+n for n in ctx['dont_use'])
-    script=f'read_verilog -sv {ys(rtl)}\nsynth -top {top} -flatten\nwrite_json {ys(run/"coarse.json")}\n'
+    # Split synth so the coarse netlist (with src attributes) feeds RTL provenance; same passes as one call.
+    script=f'read_verilog -sv {ys(rtl)}\nsynth -top {top} -flatten -run begin:fine\nwrite_json {ys(run/"coarse.json")}\n'
+    script+=f'synth -top {top} -flatten -run fine:\n'  # tee -o below is cwd-relative: Yosys rejects quoted tee paths
     script+=f'dfflibmap -liberty {ys(lib)}\nabc -liberty {ys(lib)} {excludes}\n'
     script+='hilomap -singleton -hicell '+' '.join(ctx['tiehi'])+' -locell '+' '.join(ctx['tielo'])+'\n'
     script+='insbuf -buf '+' '.join(ctx['buffer'])+'\n'
-    script+=f'clean\nread_liberty -lib {ys(lib)}\ncheck -assert\nstat -liberty {ys(lib)}\nwrite_verilog -noattr -noexpr {ys(mapped)}\nwrite_json {ys(run/"mapped.json")}\n'
+    script+=f'clean\nread_liberty -lib {ys(lib)}\ncheck -assert\ntee -q -o stat.json stat -json -liberty {ys(lib)}\nstat -liberty {ys(lib)}\nwrite_verilog -noattr -noexpr {ys(mapped)}\nwrite_json {ys(run/"mapped.json")}\n'
     yosys_script(ctx,run,'synthesis',script)
     # write_verilog renames internal $abc identifiers. Read the emitted netlist
     # back so graph instance IDs are the exact IDs consumed by OpenROAD.

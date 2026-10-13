@@ -7,13 +7,15 @@ The current implementation supports combinational designs on the Nangate45 resea
 ## Source layout
 
 - `spec2gds/`: spec contracts, candidate accounting, functional verification, synthesis, stage-by-stage ORFS execution, RCX/STA, GDS, DRC/LVS, stage graphs, feedback, Pareto selection, and dataset manifests.
-- `rtl_rewrite_pilot/rtltrial/`: the original testbench/synthesis pilot and structural candidate controller.
+- `rtl_rewrite_pilot/rtltrial/`: shared netlist/Liberty helpers and the structural candidate search (the sky130hd v1 pilot CLI was removed; see its README).
 - `rtl_rewrite_pilot/experiments/`: experiment runners and verification helpers.
 - `spec2gds/examples/`: specification, reference RTL, TB, and constraint fixtures.
 - `spec2gds/vendor/r2g/`: pinned, licensed DEF/LEF/Liberty parsers. Runtime script dependencies stay inside S2G; EDA tools and process assets may be external.
 - `spec2gds/platforms/nangate45/`: the local LVS adapter, its license, and provenance.
 
 Only source scripts, configuration, tests, examples, and dependency notices are versioned. All `docs` directories, experimental results, run/work directories, graph outputs, downloaded third-party checkouts, tool binaries, and caches remain local. Links to historical run evidence in component READMEs refer to local artifacts excluded from this repository.
+
+Project plans, specifications, and architecture documents are maintained in English under `docs/`. Experimental data documentation, integration records, smoke reports, and case studies are maintained in English under `data/`. Both directories remain local and excluded from Git. Do not create another `spec2gds/docs/` or `docs/datas/` tree.
 
 ## Run the current framework
 
@@ -25,6 +27,16 @@ python3 -m s2g doctor --context configs/local-nangate45.json
 python3 -m unittest discover -s tests -v
 python3 scripts/smoke_mul8.py --root runs/my-new-mul8-smoke
 ```
+
+Run the bounded optimization loop over an initialized workspace. Use `--scripted` for offline responses; `--live` makes paid provider calls and needs the provider key in the environment:
+
+```bash
+python3 -m s2g loop-init --root runs/project-a --loop a2-001 --arm A2 --scripted responses.json
+python3 -m s2g loop-run  --root runs/project-a --loop a2-001 --scripted responses.json   # resumable
+python3 -m s2g loop-status --root runs/project-a --loop a2-001
+```
+
+Arm comparisons with repeated independent runs and a currency ceiling use `exp-init`, `exp-preflight`, `exp-run` and `exp-report`. A live run refuses to start unless preflight confirms that the frozen model is served and that the balance covers the remaining ceiling.
 
 The smoke runner creates original and balanced-tree multiplier candidates, validates them through GDS acceptance, checks stage graphs, and runs positive and signal/body negative LVS controls. Its output root must not already exist. Generated results remain outside Git.
 

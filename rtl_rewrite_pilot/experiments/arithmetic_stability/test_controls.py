@@ -4,6 +4,8 @@ from unittest.mock import patch
 import experiment as e
 import guard,cohort
 ROOT=e.PILOT/'work/arithmetic_stability_v1'
+@unittest.skipUnless(all((ROOT/f'{d}-rep1/protocol.json').is_file() for d in e.DESIGNS),
+                     'Historical arithmetic archive is excluded from source-only checkouts')
 class Controls(unittest.TestCase):
     def test_scope(self):
         for design in e.DESIGNS:
