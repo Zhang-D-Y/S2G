@@ -109,7 +109,8 @@ def routed_gain(final, phys):
     """Arm-selected routed gain only after complete final confirmation.
 
     A physically rejected or unconfirmed synthesis winner has unknown physical
-    gain, even if its area was measured. No retrospective pool selection.
+    gain, even if its area was measured. Optional routed-pool selection must be frozen
+    in the controller policy before search, never added by the report after a run.
     """
     if final.get('unmet_requirements') or final.get('label') not in ('ACCEPTED_IMPLEMENTATION', 'ORIGINAL_RETAINED'):
         return None

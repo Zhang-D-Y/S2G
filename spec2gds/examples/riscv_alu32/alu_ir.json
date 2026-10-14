@@ -1,0 +1,26 @@
+{
+  "schema": "s2g.alu-ir.v1",
+  "design": "ultraembedded riscv_alu (BSD-3-Clause); golden/TB/spec frozen in runs/riscv-alu32-screen-v2/inputs",
+  "top": "riscv_alu",
+  "width": 32,
+  "op_ports": [{"name": "alu_op_i", "width": 4}],
+  "a": "alu_a_i",
+  "b": "alu_b_i",
+  "y": "alu_p_o",
+  "shift_amount": {"operand": "b", "bits": 5},
+  "ops": [
+    {"op": "SLL", "codes": [1]},
+    {"op": "SRL", "codes": [2]},
+    {"op": "SRA", "codes": [3]},
+    {"op": "ADD", "codes": [4]},
+    {"op": "SUB", "codes": [6]},
+    {"op": "AND", "codes": [7]},
+    {"op": "OR", "codes": [8]},
+    {"op": "XOR", "codes": [9]},
+    {"op": "SLTU", "codes": [10]},
+    {"op": "SLT", "codes": [11]}
+  ],
+  "default": "PASS_A",
+  "origin_config": {"addsub_share": ["SUB", "SLT"], "shifter": "right_merged", "shift_style": "stages_lsb_first", "select": "case"},
+  "origin_note": "Structural reading of the golden RTL: SUB and SLT share sub_res_w, SLTU and ADD are native, SRL/SRA share a staged right shifter with a fill vector, SLL is a separate staged shifter, case select. The rendered origin is a re-expression, not the golden text."
+}

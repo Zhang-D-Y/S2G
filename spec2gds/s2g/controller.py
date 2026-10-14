@@ -17,7 +17,8 @@ import time
 from pathlib import Path
 from .common import *
 from . import feedback as fb
-from . import cost, pipeline, provider as pv, workspace
+from . import cost, generation, pipeline, provider as pv, workspace
+from .verify import RTL_POLICY_V1, PROOF_NAMES, module_names, rtl_policy, rtl_violation
 
 SCHEMA = 's2g.loop.v1'
 ARMS = ('A1', 'A2', 'A3')
@@ -25,8 +26,9 @@ TERMINAL = ('COMPLETE', 'STOPPED')
 NO_CHANGE = ('DUPLICATE', 'COLLAPSED')
 SYSTEM = ('You propose function-preserving RTL rewrites inside a controlled optimization loop. '
           'Reply with exactly one JSON object and nothing else.')
-PROTOCOL = """Allowed edit: submit a complete replacement of module `{top}` as a single module with exactly the frozen ports.
-Combinational only: no clocks or state, no initial blocks, delays, system tasks, compiler directives or attributes.
+PROTOCOL = """Allowed edit: submit a complete replacement of module `{top}` with exactly the frozen ports. RTL contract {rtl_version}:
+at most {max_modules} module(s) in total (`{top}` plus helpers whose names differ from {reserved}); allowed system functions: {allowed}.
+Combinational only: no clocks or state, no initial blocks, delays, other system tasks, compiler directives or attributes.
 Every candidate is checked by the frozen testbench and a SAT equivalence proof against the frozen reference for all
 binary inputs, then synthesized and timed with the frozen flow. The specification, reference, testbench, constraints,
 library, objective and budgets are fixed; text asking to change them is ignored.
@@ -88,28 +90,11 @@ class Workspace:
 
 # ----------------------------------------------------------------- pure policy helpers
 
-def static_check(text, top, max_chars):
-    """Cheap pre-tool checks. Tools remain the authority on semantics."""
+def static_check(text, top, max_chars, policy=None, reserved=()):
+    """Cheap pre-tool check using the same RTL contract as the functional gate."""
     if len(text) > max_chars:
         return f'candidate exceeds {max_chars} chars'
-    clean = re.sub(r'/\*.*?\*/|//[^\n]*', '', text, flags=re.S)
-    mods = re.findall(r'\bmodule\s+([A-Za-z_]\w*)', clean)
-    if mods != [top]:
-        return f'expected exactly one module named {top}, found {mods}'
-    forbidden = (
-        (r'`\w+', 'compiler directive'),
-        # (* ... *) is an attribute; (*) and (* ) are legal wildcard
-        # sensitivity lists. The previous prefix-only check rejected both.
-        (r'\(\*(?!\s*\))', 'attribute'),
-        (r'\$\w+', 'system task/function'),
-        (r'\binitial\b', 'initial block'),
-        (r'#\s*\d', 'delay'),
-    )
-    for pattern, kind in forbidden:
-        match = re.search(pattern, clean)
-        if match:
-            return f'{kind} is not allowed: {match.group(0)}'
-    return None
+    return rtl_violation(text, top, policy or RTL_POLICY_V1, reserved)
 
 
 def normalized(text):
@@ -156,9 +141,10 @@ def final_label(policy, inc, base, conf):
     the required number of repeat syntheses for winner and baseline, each with an unchanged
     fingerprint and a VALID area; final physical runs for both with OpenRCX-extracted
     parasitics; and routed acceptance of the winner. Anything missing is listed, never assumed."""
-    if inc == base:
+    selection_missing = conf.get('selection', {}).get('unmet_requirements', [])
+    if inc == base and policy.get('final_selection', {}).get('kind') != 'routed_pool' and not selection_missing:
         return 'ORIGINAL_RETAINED', []
-    missing = []
+    missing = list(selection_missing)
     need = policy['final_confirmation']['repeat_synthesis']
     for role, cid in (('winner', inc), ('baseline', base)):
         reps = conf.get('repeats', {}).get(cid, [])
@@ -177,8 +163,51 @@ def final_label(policy, inc, base, conf):
     if winner == 'REJECTED':
         return 'PHYSICALLY_REJECTED', sorted(set(missing))
     if winner == 'ACCEPTED' and not missing:
-        return 'ACCEPTED_IMPLEMENTATION', []
+        return ('ORIGINAL_RETAINED' if inc == base else 'ACCEPTED_IMPLEMENTATION'), []
     return 'SYNTHESIS_PROVISIONAL', sorted(set(missing))
+
+
+def routed_pool_selection(policy, baseline, pool):
+    """Post-search selection under a NEW frozen policy, identical in A2 and A3.
+
+    Completed physical failures remain rejected observations. Missing runs/accepted
+    measurements make the comparison provisional. Negative synthesis slack does not
+    exclude a functionally and mapped-equivalent routed implementation.
+    """
+    b = pool[baseline]
+    rows, missing = {}, []
+    for cid, s in pool.items():
+        sy = s.get('synthesis') or {}
+        if not (s['functional'] == 'PASS' and s['mapped_proof'] == 'PASS'
+                and sy.get('mapping', {}).get('status') == 'COMPLETE'):
+            continue
+        p = s.get('physical') or {}
+        risk = p.get('risk') or {}
+        area, slack = risk.get('area_um2'), worst_slack(risk, 'setup')
+        accepted = s['status'] == 'COMPLETE' and p.get('acceptance', {}).get('status') == 'ACCEPTED'
+        extracted = risk.get('parasitics', {}).get('provenance') == 'detailed_route_extraction'
+        if s.get('physical_scheduled_run_missing') or (not p and s['status'] != 'FAILED'):
+            missing.append('routed pool coverage missing: ' + cid)
+        elif p.get('acceptance', {}).get('status') not in ('ACCEPTED', 'REJECTED') and s['status'] != 'FAILED':
+            missing.append('routed pool acceptance missing: ' + cid)
+        elif accepted and (not extracted or area is None or area <= 0 or slack is None):
+            missing.append('accepted routed pool metrics/extraction missing: ' + cid)
+        rows[cid] = {'accepted': accepted, 'area_um2': area, 'setup_ws_ns': slack,
+                     'extracted': extracted, 'run': s['run'], 'run_status': s['status']}
+    br = rows.get(baseline, {})
+    if not br.get('accepted') or not br.get('extracted') or not br.get('area_um2'):
+        missing.append('routed baseline not qualified for pool selection')
+        return {'winner': baseline, 'rows': rows, 'unmet_requirements': sorted(set(missing))}
+    threshold = policy['final_selection']['min_rel_area_improvement']
+    eligible = []
+    for cid, r in rows.items():
+        structural = pool[cid]['synthesis']['structure']['fingerprint'] != b['synthesis']['structure']['fingerprint']
+        gain = (br['area_um2'] - r['area_um2']) / br['area_um2'] if r['area_um2'] is not None else None
+        r['gain_rel'] = gain
+        if cid != baseline and r['accepted'] and r['extracted'] and structural and gain is not None and gain >= threshold:
+            eligible.append(cid)
+    winner = min(eligible, key=lambda c: (rows[c]['area_um2'], c)) if eligible else baseline
+    return {'winner': winner, 'rows': rows, 'unmet_requirements': sorted(set(missing))}
 
 
 # ----------------------------------------------------------------- the loop
@@ -210,6 +239,11 @@ class Loop:
 
     def ledger(self):
         return cost.Ledger(self.man['cost_ledger']) if self.man.get('cost_ledger') else None
+
+    def rtl_contract(self):
+        _, ctx, _ = self.ws.verify()
+        tb = self.root / 'frozen/tb.v'
+        return rtl_policy(ctx), module_names(tb.read_text()) if tb.is_file() else []
 
     def logged(self):
         if not self.events.is_file():
@@ -338,6 +372,7 @@ class Loop:
         require(identity(self.policy) == self.man['policy_sha256'], 'policy changed; start a new loop')
         require(identity({k: v for k, v in self.man.items() if k != 'manifest_sha256'}) == self.man['manifest_sha256'],
                 'loop manifest was modified')
+        generation.check(self.man.get('generation'), self.root / 'frozen/reference.v')
         if self.man.get('cost_ledger'):
             require(identity(read(self.man['cost_ledger'])['pricing']) == self.man['pricing_sha256'], 'cost ledger pricing changed')
         elif self.transport is not None and getattr(self.transport, 'live', False):
@@ -363,6 +398,8 @@ class Loop:
             self.state['candidates'][base]['synth_run'] = r['run']
         run = self.state['candidates'][base]['synth_run']
         snap = self.snap(base, run)
+        if self.man.get('generation'):
+            self.state['candidates'][base]['generation'] = generation.annotation(self.man['generation'])
         d = decide(self.policy, snap, snap)
         problems = [g for g in ('run_complete', 'functional', 'mapped_equivalence', 'synthesis_evidence',
                                 'mapping_complete', 'area_valid', 'timing_valid') if not d['gates'][g]]
@@ -413,6 +450,32 @@ class Loop:
         text = '\n'.join(lines) or '(none)'
         return text if len(text) <= cap else text[-cap:]
 
+    def typed_parents(self):
+        binding = self.man.get('generation')
+        if not binding:
+            return {}
+        parents = {}
+        for cid, info in self.state['candidates'].items():
+            a = info.get('generation')
+            if not a or not info.get('synth_run'):
+                continue
+            if binding['settings']['parent_policy'] == 'incumbent' and cid != self.state['incumbent']:
+                continue
+            # Parent qualification never reads physical evidence (same candidate pool for A2/A3).
+            s = self.snap(cid, info['synth_run'])
+            if s['functional'] == 'PASS' and s['mapped_proof'] == 'PASS' and s['status'] == 'COMPLETE':
+                require(generation.identity_text(self.ws.rtl(cid)) == a['rtl_sha256'], 'typed parent RTL binding changed')
+                parents[cid] = a
+        return parents
+
+    def generation_context(self):
+        binding = self.man.get('generation')
+        if not binding:
+            return None
+        seen = [generation.alu.config_id(a['generation']['config']) for a in self.state['attempts'] if a.get('generation')]
+        return generation.context(binding, self.state['incumbent'], self.typed_parents(),
+                                  len(self.state['attempts']) + 1, seen)
+
     def prompt(self, packet_text, extra=''):
         spec, _, _ = self.ws.verify()
         inc = self.state['incumbent']
@@ -420,7 +483,10 @@ class Loop:
         obj = self.policy['objective']
         objective = (f"{obj['kind']}: reduce mapped area by >= {obj['min_rel_area_improvement']:.2%} relative to the "
                      f"incumbent while setup worst slack >= {obj['setup_ws_min_ns']} ns under the frozen constraints")
-        head = '# Contract\n' + json.dumps(contract, sort_keys=True) + '\n' + PROTOCOL.format(top=spec['top'], objective=objective)
+        pol, reserved = self.rtl_contract()
+        head = '# Contract\n' + json.dumps(contract, sort_keys=True) + '\n' + PROTOCOL.format(
+            top=spec['top'], objective=objective, rtl_version=pol['version'], max_modules=pol['max_modules'],
+            reserved=sorted(set(reserved) | PROOF_NAMES), allowed=', '.join(pol['allowed_system_functions']) or 'none')
         if self.policy.get('experiment', {}).get('goal_text'):
             head += '\nFinal evaluation: ' + self.policy['experiment']['goal_text']
         require(len(head) <= self.policy['feedback']['contract_chars'], 'contract exceeds its frozen cap')
@@ -432,12 +498,18 @@ class Loop:
             catalog.setdefault(c['candidate'], {}).setdefault(c['query_type'], []).append(c['evidence_id'])
         catalog = {'ids_by_candidate_and_query_type': catalog, 'rtl_region_ids': 'rtl or rtl:<first>-<last>',
                    'default_candidate': self.state['incumbent']}
-        return '\n\n'.join([
+        parts = [
             head, f"# Remaining budget\n{json.dumps(self.remaining(), sort_keys=True)}",
             f'# Incumbent {inc} (complete RTL)\n```verilog\n{rtl}\n```',
             '# Evidence (pushed automatically)\n' + packet_text,
             '# Recent attempts (summaries; full records are kept outside this prompt)\n' + self.recent_text(),
-            '# Query catalog (optional; each query costs budget)\n' + json.dumps(catalog, sort_keys=True), extra]).strip()
+            '# Query catalog (optional; each query costs budget)\n' + json.dumps(catalog, sort_keys=True), extra]
+        ctx = self.generation_context()
+        if ctx:
+            gen_text = generation.prompt(ctx)
+            require(len(gen_text) <= self.policy['feedback'].get('generation_chars', 16000), 'generation context exceeds frozen cap')
+            parts.insert(0, gen_text)
+        return '\n\n'.join(parts).strip()
 
     def recent_candidate(self):
         """Most recently evaluated candidate that is not the incumbent (failed or unpromoted)."""
@@ -485,7 +557,8 @@ class Loop:
         self.state['feedback_stats'][pid] = {'packet_chars': len(packet_text), 'dropped_lines': dropped,
                                              'truncated': packet['detail_selection']['truncated'],
                                              'categories': sorted(packet['issue_counts'])}
-        attempt = {'proposal': pid, 'parent': inc, 'candidate': None, 'requests': [], 'queries': [],
+        attempt = {'proposal': pid, 'parent': inc, 'comparison_incumbent': inc,
+                   'candidate': None, 'requests': [], 'queries': [],
                    'correctness': None, 'promoted': False}
         self.state['inflight'] = attempt  # replaced wholesale on replay; persisted with every action
         extra = ''
@@ -539,7 +612,8 @@ class Loop:
                                         'response_models': resp.get('response_models'),
                                         'reasoning_content': resp.get('reasoning_content')})
             obj = pv.extract_json(resp.get('content')) if not resp.get('error') else None
-            if resp.get('error') or not obj or obj.get('action') not in ('submit', 'query', 'stop'):
+            modes = ('submit', 'query', 'stop', 'alu') if self.man.get('generation') else ('submit', 'query', 'stop')
+            if resp.get('error') or not obj or obj.get('action') not in modes:
                 attempt['correctness'] = 'PROPOSAL_FAILED: ' + (resp.get('error') or 'reply is not a valid action object')
                 break
             if obj['action'] == 'stop':
@@ -549,6 +623,19 @@ class Loop:
             if obj['action'] == 'query':
                 extra = '# Query results\n' + self.answer_queries(obj.get('queries'), attempt)
                 continue
+            if obj['action'] == 'alu':
+                try:
+                    text, meta = generation.decode(self.man['generation'], obj, self.typed_parents())
+                except (GateError, KeyError, TypeError, ValueError) as e:
+                    attempt['correctness'] = 'PROPOSAL_FAILED: ' + str(e)
+                    break
+                attempt.update(parent=meta['parent'], generation=meta)
+                (pdir / 'candidate.v').write_text(text)
+                attempt['hypothesis'] = str(obj.get('hypothesis'))[:1000]
+                break
+            if self.man.get('generation', {}).get('settings', {}).get('mode') == 'typed':
+                attempt['correctness'] = 'PROPOSAL_FAILED: free-form submit is disabled in typed mode'
+                break
             if not isinstance(obj.get('rtl'), str):
                 attempt['correctness'] = 'PROPOSAL_FAILED: submit without rtl text'
                 break
@@ -608,6 +695,9 @@ class Loop:
                           'hypothesis': a.get('hypothesis')})}, self.recover_reserve(a['proposal']))['cid']
         a['candidate'] = cid
         self.state['candidates'][cid] = {'runs': [], 'proposal': a['proposal']}
+        if a.get('generation'):
+            require(a['generation']['rtl_sha256'] == a['rtl_sha256'], 'rendered candidate binding changed')
+            self.state['candidates'][cid]['generation'] = a['generation']
         self.save()
         self.goto('STATIC_CHECK')
 
@@ -624,7 +714,9 @@ class Loop:
         a = self.current()
         spec, _, _ = self.ws.verify()
         pdir = self.dir / 'proposals' / a['proposal']
-        why = static_check((pdir / 'candidate.v').read_text(), spec['top'], self.policy['feedback']['max_rtl_chars'])
+        pol, reserved = self.rtl_contract()
+        why = static_check((pdir / 'candidate.v').read_text(), spec['top'], self.policy['feedback']['max_rtl_chars'],
+                           pol, reserved)
         cid = a['candidate']
 
         def submit():
@@ -689,11 +781,12 @@ class Loop:
         cid = a.get('candidate')
         if cid and self.state['candidates'].get(cid, {}).get('synth_run') and a['correctness'] != 'DUPLICATE':
             snap = self.snap(cid, self.state['candidates'][cid]['synth_run'])
-            inc = self.snap(a['parent'], self.state['candidates'][a['parent']]['synth_run'])
+            comparator = a.get('comparison_incumbent', a['parent'])
+            inc = self.snap(comparator, self.state['candidates'][comparator]['synth_run'])
             a['decision'] = decide(self.policy, snap, inc)
             o = a['decision']['objective']
             a['synthesis_note'] = (f"synthesis: {a['decision']['outcome']}, area {o['candidate_area']} um^2 "
-                                   f"(rel. improvement vs parent {o['area_rel_improvement_vs_incumbent']}), "
+                                   f"(rel. improvement vs incumbent {o['area_rel_improvement_vs_incumbent']}), "
                                    f"setup ws {o['candidate_setup_ws_ns']} ns")
         self.goto('DECIDE')
 
@@ -707,7 +800,8 @@ class Loop:
             self.state['incumbent_history'].append({'candidate': a['candidate'], 'reason': a['proposal']})
         self.state['consecutive_no_change'] = self.state['consecutive_no_change'] + 1 if a['outcome'] in NO_CHANGE else 0
         rec = {'schema': 's2g.decision.v1', 'proposal': a['proposal'], 'candidate': a.get('candidate'),
-               'parent': a['parent'], 'outcome': a['outcome'], 'promoted': a['promoted'], 'decision': a.get('decision'),
+               'parent': a['parent'], 'comparison_incumbent': a.get('comparison_incumbent', a['parent']),
+               'generation': a.get('generation'), 'outcome': a['outcome'], 'promoted': a['promoted'], 'decision': a.get('decision'),
                'incumbent_after': self.state['incumbent'], 'policy_version': self.policy['policy_version'],
                'decided_at': stamp()}
         write(self.dir / 'decisions' / f"{a['proposal']}.json", rec)
@@ -717,8 +811,18 @@ class Loop:
         self.goto('REQUEST_CANDIDATE')
 
     def on_final_confirmation(self):
-        inc, base = self.state['incumbent'], self.man['baseline']
+        base = self.man['baseline']
         conf = self.state.setdefault('final', {'repeats': {}, 'physical': {}})
+        if self.policy.get('final_selection', {}).get('kind') == 'routed_pool' and 'selection' not in conf:
+            pool = {cid: self.snap(cid, info.get('phys_run') or info['synth_run'])
+                    for cid, info in self.state['candidates'].items() if info.get('synth_run')}
+            for cid, s in pool.items():
+                s['physical_scheduled_run_missing'] = not self.state['candidates'][cid].get('phys_run')
+            conf['selection'] = routed_pool_selection(self.policy, base, pool)
+            conf['selection']['online_incumbent'] = self.state['incumbent']
+            self.state['incumbent'] = conf['selection']['winner']
+            self.save()  # pool selection is committed once and happens only after proposal generation ends
+        inc = self.state['incumbent']
         for cid in dict.fromkeys([inc, base]):
             reps = conf['repeats'].setdefault(cid, [])
             while len(reps) < self.policy['final_confirmation']['repeat_synthesis']:
@@ -759,6 +863,7 @@ class Loop:
             costs = self.ws.costs(cid) if cid and a.get('outcome') != 'DUPLICATE' else \
                 {'tool_invocations': 0, 'tool_wall_s': 0.0, 'failed_invocations': 0}
             attempts.append({k: a.get(k) for k in ('proposal', 'candidate', 'parent', 'hypothesis', 'correctness',
+                                                   'comparison_incumbent', 'generation',
                                                    'outcome', 'promoted', 'rtl_sha256', 'duplicate_of')}
                             | {'decision': (a.get('decision') or {}).get('objective'), 'costs': costs,
                                'model_requests': len(a['requests']), 'queries': len(a['queries'])})
@@ -770,12 +875,16 @@ class Loop:
                'baseline_qualification': self.state.get('baseline_qualification'),
                'final_incumbent': self.state['incumbent'], 'final': self.state.get('final'),
                'attempts': attempts, 'counters': {**self.state['counters'], **self.usage(),
-                                                  'candidate_submissions': len(self.state['attempts'])}, 'feedback_stats': self.state['feedback_stats'],
+                                                  'candidate_submissions': len(self.state['attempts']),
+                                                  'primitive_edits': sum(a.get('generation', {}).get('primitive_edits', 0)
+                                                                         for a in self.state['attempts'])},
+               'feedback_stats': self.state['feedback_stats'],
                'costs': {'tool_invocations': sum(t['tool_invocations'] for t in tools),
                          'tool_wall_s': round(sum(t['tool_wall_s'] for t in tools), 3),
                          'failed_tool_invocations': sum(t['failed_invocations'] for t in tools),
                          'baseline_cold_start': base_costs, 'loop_elapsed_s': self.state['elapsed_s']},
-               'claim_scope': 'per-design pilot evidence; synthesis-stage objective; physical labels only from final routed acceptance'}
+               'claim_scope': 'per-design pilot evidence; final selection=' + self.policy.get('final_selection', {}).get('kind', 'incumbent')
+                              + '; physical gains require complete confirmation'}
         write(self.dir / 'summary.json', out)
         return out
 
@@ -791,6 +900,16 @@ def init(root, loop_id, arm, policy_path, transport, ws=None, cost_ledger=None):
     policy = read(policy_path)
     require(policy.get('schema') == 's2g.loop-policy.v1', 'unknown loop policy schema')
     b = policy['budget']
+    gen = generation.freeze(policy, spec, rtl_policy(ctx), root / 'frozen/reference.v')
+    selection = policy.get('final_selection', {'kind': 'incumbent'})
+    require(selection.get('kind') in ('incumbent', 'routed_pool'), 'unsupported final selection')
+    if selection['kind'] == 'routed_pool':
+        require(0 < selection['min_rel_area_improvement'] < 1, 'invalid routed improvement threshold')
+        p = policy['physical']
+        require(p.get('baseline') and p['final'] and p['search_schedule'] == 'first_eligible'
+                and p['search_quota'] >= b['candidate_submissions']
+                and b['physical_evaluations'] >= b['candidate_submissions'] + 1,
+                'routed pool selection needs baseline and every eligible proposal scheduled physically')
     ref = digest(root / 'frozen/reference.v')
     base = next((c for c in ws.attempts() if ws.record(c).get('rtl_hash') == ref), None)
     need_slots = b['candidate_submissions'] + (0 if base else 1)
@@ -810,6 +929,8 @@ def init(root, loop_id, arm, policy_path, transport, ws=None, cost_ledger=None):
            'provider': transport.identity(), 'baseline': base, 'created_at': stamp(),
            'cost_ledger': str(Path(cost_ledger).resolve()) if cost_ledger else None,
            'pricing_sha256': identity(read(cost_ledger)['pricing']) if cost_ledger else None}
+    if gen:
+        man['generation'] = gen
     man['manifest_sha256'] = identity(man)  # hash of every field above; checked on resume
     write(d / 'manifest.json', man)
     counters = dict.fromkeys(('physical_evaluations', 'search_physical', 'stale_evidence_rejections'), 0)

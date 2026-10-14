@@ -72,4 +72,31 @@ class Gates(unittest.TestCase):
         for name,sha in provenance['files'].items():
             self.assertEqual(digest(Path(c['graph_parser_dir']).parent/name),sha)
 
+class RtlPolicy(unittest.TestCase):
+    V2={'version':'s2g.rtl-policy.v2','allowed_system_functions':['$signed','$unsigned'],'max_modules':3}
+    CAST='module m(input [3:0] a,b, output y);\n  assign y = $signed(a) < $signed(b);\nendmodule\n'
+    HELP='module h(input x, output z); assign z = ~x; endmodule\nmodule m(input a, output y);\n  h u(.x(a), .z(y));\nendmodule\n'
+    def test_v1_is_the_default_and_rejects_casts_and_helpers(self):
+        from s2g.verify import rtl_policy,rtl_violation
+        p=rtl_policy({})
+        self.assertIn('$signed',rtl_violation(self.CAST,'m',p))
+        self.assertIn('exceed',rtl_violation(self.HELP,'m',p))
+    def test_v2_allows_pure_casts_and_named_helpers_only(self):
+        from s2g.verify import rtl_violation
+        self.assertIsNone(rtl_violation(self.CAST,'m',self.V2))
+        self.assertIsNone(rtl_violation(self.HELP,'m',self.V2,reserved=['tb']))
+        self.assertIn('$display',rtl_violation(self.CAST.replace('assign','initial $display(1); assign',1).replace('initial ',''),'m',self.V2))
+        self.assertIn('collide',rtl_violation(self.HELP.replace(' h(',' tb(').replace('h u(','tb u('),'m',self.V2,reserved=['tb']))
+        self.assertIn('collide',rtl_violation(self.HELP.replace(' h(',' gold(').replace('h u(','gold u('),'m',self.V2))
+        self.assertIn('exceed',rtl_violation(self.HELP*2,'m',dict(self.V2,max_modules=1)))
+        self.assertIn('missing',rtl_violation(self.HELP,'top',self.V2))
+    def test_policy_beyond_pure_casts_is_refused(self):
+        from s2g.verify import rtl_policy
+        with self.assertRaises(GateError):rtl_policy({'rtl_policy':dict(self.V2,allowed_system_functions=['$display'])})
+    def test_controller_precheck_uses_the_same_contract(self):
+        from s2g.controller import static_check
+        from s2g.verify import rtl_violation
+        for text in (self.CAST,self.HELP):
+            self.assertEqual(static_check(text,'m',10000,self.V2,['tb']),rtl_violation(text,'m',self.V2,['tb']))
+
 if __name__=='__main__':unittest.main()

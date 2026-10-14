@@ -1,0 +1,33 @@
+{
+  "schema": "s2g.alu-actions.v1",
+  "version": "alu-actions-v1",
+  "frozen_at": "2026-10-13",
+  "derivation": "Generic structural choices for single-output combinational integer ALUs. Derived from the riscv_alu32 deterministic screen (adder sharing, shifter unification by bit reversal) plus common alternatives (merged right shifter, explicit log-stage shifters, output-select styles). Frozen before any held-out ALU is qualified; held-out sources were inspected only for interface/opcode compatibility.",
+  "dimensions": {
+    "addsub_share": {
+      "kind": "subset",
+      "of": ["ADD", "SUB", "SLTU", "SLT"],
+      "rule": "empty or at least two of the design's ops; members use one adder computing a + (b ^ {W{sub}}) + sub; non-members use their own native operator",
+      "default": []
+    },
+    "shifter": {
+      "kind": "choice",
+      "values": ["separate", "right_merged", "reverse_right", "reverse_left"],
+      "rule": "separate: one shifter per shift op; right_merged: SRL/SRA share an arithmetic right shifter with a fill bit; reverse_right: all shift ops use one arithmetic right shifter, SLL via bit reversal; reverse_left: all use one left shifter, right shifts via bit reversal and fill injection",
+      "default": "separate"
+    },
+    "shift_style": {
+      "kind": "choice",
+      "values": ["native", "stages_lsb_first", "stages_msb_first"],
+      "rule": "native Verilog shift operators, or explicit log2(W) mux stages ordered from the least or most significant shift-amount bit",
+      "default": "native"
+    },
+    "select": {
+      "kind": "choice",
+      "values": ["case", "and_or", "grouped"],
+      "rule": "case on the opcode; AND-OR of one-hot decoded results; or a per-class result (arith/logic/shift/compare) followed by a class select",
+      "default": "case"
+    }
+  },
+  "action_schema": {"op": "set", "dimension": "<name>", "value": "<value from the vocabulary>"}
+}

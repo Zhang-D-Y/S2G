@@ -1,0 +1,27 @@
+{
+  "schema": "s2g.alu-ir.v1",
+  "design": "held-out: combinational core derived from kleine-riscv src/units/alu.v (local copy has no license file; derived RTL stays in git-ignored runs/)",
+  "top": "kleine_alu",
+  "width": 32,
+  "op_ports": [{"name": "function_select", "width": 3}, {"name": "function_modifier", "width": 1}],
+  "a": "input_a",
+  "b": "input_b",
+  "y": "result",
+  "shift_amount": {"operand": "b", "bits": 5},
+  "ops": [
+    {"op": "ADD", "codes": [0]},
+    {"op": "SUB", "codes": [1]},
+    {"op": "SLL", "codes": [2, 3]},
+    {"op": "SLT", "codes": [4, 5]},
+    {"op": "SLTU", "codes": [6, 7]},
+    {"op": "XOR", "codes": [8, 9]},
+    {"op": "SRL", "codes": [10]},
+    {"op": "SRA", "codes": [11]},
+    {"op": "OR", "codes": [12, 13]},
+    {"op": "AND", "codes": [14]},
+    {"op": "ANDN", "codes": [15]}
+  ],
+  "default": "PASS_A",
+  "origin_config": {"addsub_share": ["ADD", "SUB"], "shifter": "right_merged", "shift_style": "native", "select": "case"},
+  "origin_note": "Approximate structural reading: ADD/SUB share one adder (a + (mod ? -b : b)), SRL/SRA share a native arithmetic right shifter with a fill bit, SLL separate, case select. The original merges SLT/SLTU into one 33-bit signed compare, which the frozen vocabulary does not express; the origin row is therefore the nearest configuration, not the golden. All 16 opcode values are defined, so the default is unreachable."
+}

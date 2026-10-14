@@ -1,0 +1,30 @@
+{
+  "schema": "s2g.alu-stress-contracts.v1",
+  "frozen_at": "2026-10-14",
+  "purpose": "Prequalify a physically stressed contract for the A2/A3 question. Only floorplan keys change; the SDC, spec, TB, reference, tools, seed and corner are unchanged, so synthesis evidence and the synthesis-promotable set stay valid.",
+  "reference_contract": {"name": "C0", "core_area": [10, 10, 80, 80], "die_area": [0, 0, 90, 90], "place_density": 0.4},
+  "contracts": [
+    {"name": "S1", "core_area": [10, 10, 70, 70], "die_area": [0, 0, 80, 80], "place_density": 0.55},
+    {"name": "S2", "core_area": [10, 10, 62, 62], "die_area": [0, 0, 72, 72], "place_density": 0.65},
+    {"name": "S3", "core_area": [10, 10, 56, 56], "die_area": [0, 0, 66, 66], "place_density": 0.75}
+  ],
+  "sample": {
+    "seed": 20261014,
+    "always": ["__golden__", "routed_optimum_C0", "synthesis_rule_best_C0"],
+    "promotable_random": 16,
+    "negative_synthesis_slack_random": 5,
+    "repeats": ["__golden__", "routed_optimum_C0"],
+    "promotable_definition": "C0 synthesis table: functional and mapped PASS, VALID area and slack, slack >= 0, changed fingerprint, area >= 0.5% below the raw golden"
+  },
+  "selection_rule": {
+    "order": ["S1", "S2", "S3"],
+    "choose": "the first contract (mildest) satisfying every condition",
+    "conditions": [
+      "both raw goldens routed ACCEPTED with detailed_route_extraction",
+      "all repeat pairs match the main run exactly on synthesis and routed decision metrics",
+      "for each design, the routed rejection rate among sampled promotable configurations is within [0.15, 0.60]",
+      "no unresolved or timed-out outcome among the sampled configurations"
+    ],
+    "otherwise": "report that no contract qualifies; do not tune the contract after seeing the results"
+  }
+}

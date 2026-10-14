@@ -35,6 +35,7 @@ def init(root, spec_path, reference, tb, sdc, context, review_path=None):
     require(review['spec_hash'] == sha and not spec['open_questions'], 'review does not match resolved spec')
     c = read(context)
     require(c['schema']=='s2g.context.v1' and c['candidate_budget']>0, 'invalid implementation context')
+    from .verify import rtl_policy;rtl_policy(c)  # refuses any policy beyond pure casts
     s2g_root=Path(__file__).resolve().parents[2]
     for key in ('graph_parser_dir','typed_rules','typed_guard'):
         if key in c:require(Path(c[key]).resolve().is_relative_to(s2g_root),'non-tool scripts must reside under S2G: '+key)

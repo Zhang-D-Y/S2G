@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import sys
 from .common import GateError, identity, read
-from . import contracts,workspace,pipeline,graphs,search,actions,pyg,controller,provider,experiment
+from . import contracts,workspace,pipeline,graphs,search,actions,pyg,controller,provider,experiment,generation
 
 def main():
     p=argparse.ArgumentParser(description='Evidence-bound spec to GDS research workflow (no implicit provider calls)')
@@ -31,10 +31,12 @@ def main():
     q=s.add_parser('loop-init',help='freeze a finite optimization loop over an existing workspace')
     q.add_argument('--root',required=True);q.add_argument('--loop',required=True);q.add_argument('--arm',choices=controller.ARMS,required=True)
     q.add_argument('--policy',default=str(Path(__file__).resolve().parents[1]/'configs/loop-policy-v1.json'))
-    g=q.add_mutually_exclusive_group(required=True);g.add_argument('--live',action='store_true',help='paid provider calls');g.add_argument('--scripted',help='JSON file of offline responses')
+    g=q.add_mutually_exclusive_group(required=True);g.add_argument('--live',action='store_true',help='paid provider calls');g.add_argument('--scripted',help='JSON file of offline responses');g.add_argument('--random',choices=generation.STRATEGIES,help='offline ALU random control')
+    q.add_argument('--seed',type=int,default=0,help='frozen random-control seed')
     q=s.add_parser('loop-run',help='run or resume a loop until it completes or stops')
     q.add_argument('--root',required=True);q.add_argument('--loop',required=True)
-    g=q.add_mutually_exclusive_group();g.add_argument('--live',action='store_true');g.add_argument('--scripted')
+    g=q.add_mutually_exclusive_group();g.add_argument('--live',action='store_true');g.add_argument('--scripted');g.add_argument('--random',choices=generation.STRATEGIES)
+    q.add_argument('--seed',type=int,default=0)
     q=s.add_parser('loop-status');q.add_argument('--root',required=True);q.add_argument('--loop',required=True)
     q=s.add_parser('exp-init',help='freeze an arm comparison: N independent runs per arm sharing one cost ledger')
     q.add_argument('--root',required=True)
@@ -69,7 +71,7 @@ def main():
         elif a.command=='pyg-export':result=pyg.export(a.graph,a.out,a.python)
         elif a.command in ('loop-init','loop-run'):
             policy=read(a.policy) if a.command=='loop-init' else read(Path(a.root)/'loops'/a.loop/'manifest.json')['policy']
-            transport=provider.OpenAICompatible(policy['provider']) if a.live else (provider.Scripted(read(a.scripted)['responses']) if a.scripted else None)
+            transport=provider.OpenAICompatible(policy['provider']) if a.live else (provider.Scripted(read(a.scripted)['responses']) if a.scripted else (generation.RandomTransport(a.random,a.seed) if a.random else None))
             if a.command=='loop-init':result=controller.init(a.root,a.loop,a.arm,a.policy,transport)
             else:
                 st=controller.Loop(a.root,a.loop,transport).run()

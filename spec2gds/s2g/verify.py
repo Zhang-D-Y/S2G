@@ -2,6 +2,38 @@ from pathlib import Path
 import re
 from .common import *
 
+# Versioned RTL contract. Workspaces frozen without an `rtl_policy` keep v1 semantics.
+RTL_POLICY_V1={'version':'s2g.rtl-policy.v1','allowed_system_functions':[],'max_modules':1}
+PURE_CASTS={'$signed','$unsigned'}  # only side-effect-free casts may ever be allowed
+PROOF_NAMES={'gold','gate','miter'}  # module names used by the equivalence scripts
+
+def rtl_policy(ctx):
+    p=ctx.get('rtl_policy',RTL_POLICY_V1)
+    require(set(p['allowed_system_functions'])<=PURE_CASTS and p['max_modules']>=1,'unsupported rtl_policy')
+    return p
+
+def module_names(text):
+    return re.findall(r'\bmodule\s+([A-Za-z_]\w*)',re.sub(r'/\*.*?\*/|//[^\n]*','',text,flags=re.S))
+
+def rtl_violation(text,top,policy,reserved=()):
+    """Shared by the controller pre-check and the functional gate; tools stay the semantic authority.
+    Returns None or the reason the text is outside the frozen RTL contract."""
+    clean=re.sub(r'/\*.*?\*/|//[^\n]*','',text,flags=re.S)
+    clean=re.sub(r'`timescale[^\n]*','',clean)
+    mods=re.findall(r'\bmodule\s+([A-Za-z_]\w*)',clean)
+    if top not in mods:return f'top module {top} missing; found {mods}'
+    if len(mods)>policy['max_modules']:return f"{len(mods)} modules exceed the contract limit of {policy['max_modules']} (top plus helpers)"
+    if len(set(mods))!=len(mods):return f'duplicate module names: {mods}'
+    clash=sorted((set(mods)-{top})&(set(reserved)|PROOF_NAMES|{top}))
+    if clash:return f'helper module names collide with frozen or proof modules: {clash}'
+    for pattern,kind in ((r'`\w+','compiler directive'),(r'\(\*(?!\s*\))','attribute'),(r'\binitial\b','initial block'),(r'#\s*\d','delay')):
+        m=re.search(pattern,clean)
+        if m:return f'{kind} is not allowed: {m.group(0)}'
+    bad=sorted({f for f in re.findall(r'\$\w+',clean) if f not in policy['allowed_system_functions']})
+    if bad or re.search(r'\$(?!\w)',clean):
+        return f"system task/function is not allowed: {bad or ['$']} (allowed: {policy['allowed_system_functions'] or 'none'})"
+    return None
+
 def yosys_script(ctx, folder, name, script, marker=None):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
     p=folder/(name+'.ys');p.write_text(script+'\n')
@@ -11,12 +43,10 @@ def functional(root, run, rtl, spec, ctx):
     require(not spec['clocks'] and not spec['resets'] and spec['latency_cycles']==0,
             'sequential contract requires a qualified sequential equivalence adapter; unsupported in v0.1')
     run=Path(run);top=spec['top'];tools=ctx['tools'];gold=Path(root)/'frozen/reference.v'
+    policy=rtl_policy(ctx);reserved=module_names((Path(root)/'frozen/tb.v').read_text())
     for label,path in [('candidate',rtl),('reference',gold)]:
-        text=Path(path).read_text()
-        text=re.sub(r'/\*.*?\*/|//[^\n]*','',text,flags=re.S)
-        text=re.sub(r'`timescale[^\n]*','',text)
-        require('$' not in text and '`' not in text and not re.search(r'\binitial\b|#\s*\d',text),
-                'combinational RTL must not contain system tasks, directives, initial blocks or delays')
+        why=rtl_violation(Path(path).read_text(),top,policy,reserved)
+        require(why is None,f'{label} RTL outside the frozen RTL contract ({policy["version"]}): {why}')
         yosys_script(ctx,run,'lint_'+label,
             f'read_verilog -sv {ys(path)}\nhierarchy -check -top {top}\nproc\nflatten\nopt\ncheck -assert\nwrite_json {ys(run/(label+".json"))}')
         mod=read(run/(label+'.json'))['modules'][top]

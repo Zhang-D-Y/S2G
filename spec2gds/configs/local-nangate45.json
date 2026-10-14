@@ -43,6 +43,15 @@
   "provenance_note": "Explicit compatibility profile: installed ORFS scripts plus separately fingerprinted local Nangate45 platform. Research PDK, not foundry signoff. S2G-local LVS PWELL body-connection correction, qualified with positive and negative controls.",
   "rcx_rules": "rcx_patterns.rules",
   "route_seed": 17,
+  "rtl_policy": {
+    "allowed_system_functions": [
+      "$signed",
+      "$unsigned"
+    ],
+    "max_modules": 8,
+    "note": "v2 (2026-10-13): pure casts and helper modules are allowed; TB, RTL SAT and mapped SAT remain the semantic authority. Workspaces frozen without this field keep v1 (no system functions, one module).",
+    "version": "s2g.rtl-policy.v2"
+  },
   "schema": "s2g.context.v1",
   "tech_lef": "lef/NangateOpenCellLibrary.tech.lef",
   "threads": 1,
